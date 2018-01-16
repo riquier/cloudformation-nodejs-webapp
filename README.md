@@ -1,0 +1,1 @@
+This project is to maintain an easy to deploy template for AWS to run reactjs apps
