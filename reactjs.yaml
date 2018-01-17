@@ -270,28 +270,24 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Sid: Allow pipeline to store logs
-                Effect: Allow
+              - Effect: Allow
                 Action:
                   - "logs:CreateLogGroup"
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                 Resource:
                   - !Join ['', ['arn:aws:logs:', !Ref "AWS::Region", ':log-group:/aws/codebuild/*']]
-              - Sid: Allow pipeline to get source code
-                Effect: Allow
+              - Effect: Allow
                 Resource:
                   - !Ref GitRepositoryARN
                 Action:
                   - codecommit:GitPull
-              - Sid: Allow pipeline to store artifacts
-                Effect: Allow
+              - Effect: Allow
                 Resource:
                   - !Join ['',[!GetAtt BuildArtifactBucket.Arn, '/*']]
                 Action:
                   - s3:PutObject
-              - Sid: Allow deployment to final bucket
-                Effect: Allow
+              - Effect: Allow
                 Action:
                   - s3:ListBucket
                   - s3:PutObject
