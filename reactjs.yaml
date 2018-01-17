@@ -1,0 +1,131 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: React.js based serverless web app architecture
+
+Parameters:
+  Application:
+    Description: Project Name
+    Type: String
+  Description:
+    Description: Description
+    Type: String
+  Environment:
+    Description: Description
+    Default: Development
+    AllowedValues :
+      - Development
+      - Quality Assurance
+      - Production
+    Type: String
+  RootDomainName:
+    Description: The DNS name of an existing Amazon Route 53 hosted zone e.g. example.io
+    Type: String
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
+    ConstraintDescription: must be a valid DNS zone name.
+  FullDomainName:
+    Type: String
+    Description: The full domain name e.g. alpha.example.io
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
+    ConstraintDescription: must be a valid DNS zone name.
+  GitRepositoryName:
+    Description: Name of repository to create (not applied if pre existing repo is supplied)
+    Type: String
+    Default: ""
+  GitRepositoryExists:
+    Description: If checked will assume the repo has already been created
+    Type: String
+    Default: No
+    AllowedValues :
+      - Yes
+      - No
+  SSLCertificate:
+      Type: String
+      Description: the Amazon Resource Name (ARN) of an AWS Certificate Manager (ACM) certificate.
+      AllowedPattern: "arn:aws:acm:.*"
+
+Conditions:
+  NeedsNewGitRepository: !Equals [!Ref GitRepositoryExists, "No"]
+
+Resources:
+
+  GitRepository:
+    DeletionPolicy: Retain
+    Condition: NeedsNewGitRepository
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryDescription: !Ref Description
+      RepositoryName: !Ref GitRepositoryName
+
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Ref: RootDomainName
+
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      PolicyDocument:
+        Id: MyPolicy
+        Version: '2012-10-17'
+        Statement:
+        - Sid: PublicReadForGetBucketObjects
+          Effect: Allow
+          Principal: "*"
+          Action: s3:GetObject
+          Resource: !Join ['', ['arn:aws:s3:::', !Ref WebsiteBucket, /*]]
+      Bucket:
+        Ref: WebsiteBucket
+
+  WebsiteCloudfront:
+    DependsOn:
+      - WebsiteBucket
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Ref FullDomainName
+        Comment: !Ref Description
+        DefaultCacheBehavior:
+          AllowedMethods:
+          - GET
+          - HEAD
+          Compress: true
+          TargetOriginId: s3-static-files
+          ViewerProtocolPolicy: redirect-to-https
+          ViewerCertificate:
+            AcmCertificateArn: !Ref SSLCertificate
+            SslSupportMethod: sni-only
+        DefaultRootObject: index.html
+        Enabled: true
+        Origins:
+          - DomainName: !Ref WebsiteBucket
+            Id: s3-static-files
+            S3OriginConfig:
+              OriginAccessIdentity: origin-access-identity/cloudfront/E127EXAMPLE51Z
+
+  DomainRecords:
+    DependsOn:
+      - WebsiteCloudfront
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Ref FullDomainName
+      Type: A
+      AliasTarget:
+        HostedZoneName: !Join ['', [!Ref RootDomainName, .]]
+        DNSName: !GetAtt [WebsiteCloudfront, DomainName]
+
+
+Outputs:
+  GitRepositoryName:
+    Value: !If [NeedsNewGitRepository, !Ref GitRepositoryName, !Ref GitRepositoryName]
+    Description: Name of the git repository
+  BucketName:
+    Value: !Ref 'WebsiteBucket'
+    Description: Name of S3 bucket to hold website content
+  CloudfrontEndpoint:
+    Value: !GetAtt [WebsiteCloudfront, DomainName]
+    Description: Endpoint for Cloudfront distribution
+  FullDomain:
+    Value: !Ref 'FullDomainName'
+    Description: Full DomainName
