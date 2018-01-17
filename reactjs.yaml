@@ -240,7 +240,7 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
       Artifacts:
-        Type: no_artifacts
+        Type: CODEPIPELINE
       Description: !Ref Description
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
@@ -249,7 +249,7 @@ Resources:
       Name: String
       ServiceRole: !GetAtt WebsiteCodeBuildServiceRole.Arn
       Source:
-        Source
+        Type: CODEPIPELINE
 
   WebsiteCodeBuildServiceRole:
     Type: "AWS::IAM::Role"
