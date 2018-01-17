@@ -4,14 +4,14 @@ Description: React.js based serverless web app architecture
 
 Parameters:
   Application:
-    Description: Project Name
+    Description: Project Name, this needs to be unique as it will be used to create and tag assets
     Type: String
-    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
+    AllowedPattern: (?!-)[a-zA-Z0-9-]{1,63}(?<!-)
   Description:
     Description: Description
     Type: String
   Environment:
-    Description: Description
+    Description: Environment that will be tagged on all assets
     Default: Development
     AllowedValues :
       - Development
@@ -45,11 +45,12 @@ Parameters:
       - No
   SSLCertificate:
       Type: String
-      Description: the Amazon Resource Name (ARN) of an AWS Certificate Manager (ACM) certificate.
+      Description: the Amazon Resource Name (ARN) of an AWS Certificate Manager (ACM) certificate. Otherwise will downgrade to HTTP.
       AllowedPattern: "arn:aws:acm:.*"
 
 Conditions:
   NeedsNewGitRepository: !Equals [!Ref GitRepositoryExists, "No"]
+  UsesHTTPS: !Not[ !Equals [!Ref SSLCertificate, ""] ]
 
 Resources:
 
@@ -101,9 +102,9 @@ Resources:
           - HEAD
           Compress: true
           TargetOriginId: s3-static-files
-          ViewerProtocolPolicy: redirect-to-https
+          ViewerProtocolPolicy: !If [ UsesHTTPS, redirect-to-https, http-only]
           ViewerCertificate:
-            AcmCertificateArn: !Ref SSLCertificate
+            AcmCertificateArn: !If [ UsesHTTPS, !Ref SSLCertificate, '']
             SslSupportMethod: sni-only
         DefaultRootObject: index.html
         Enabled: true
