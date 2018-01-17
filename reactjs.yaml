@@ -89,7 +89,7 @@ Resources:
           - HEAD
           Compress: true
           TargetOriginId: s3-static-files
-          ViewerProtocolPolicy: !If [ UsesHTTPS, redirect-to-https, http-only]
+          ViewerProtocolPolicy: !If [ UsesHTTPS, redirect-to-https, allow-all]
           ForwardedValues:
             QueryString: false
         ViewerCertificate:
