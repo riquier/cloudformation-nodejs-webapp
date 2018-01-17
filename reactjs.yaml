@@ -95,7 +95,7 @@ Resources:
         ViewerCertificate:
           AcmCertificateArn: !If [ UsesHTTPS, !Ref SSLCertificate, !Ref "AWS::NoValue"]
           CloudFrontDefaultCertificate: !If [ UsesHTTPS, !Ref "AWS::NoValue", true]
-          SslSupportMethod: sni-only
+          SslSupportMethod: !If [ UsesHTTPS, sni-only, !Ref "AWS::NoValue"]
         DefaultRootObject: index.html
         Enabled: true
         Origins:
