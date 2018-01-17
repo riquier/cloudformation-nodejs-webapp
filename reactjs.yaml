@@ -28,41 +28,23 @@ Parameters:
     Description: The full domain name e.g. alpha.example.io
     AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
     ConstraintDescription: must be a valid DNS zone name.
-  GitRepositoryName:
-    Description: Name of repository to use
+  GitRepositoryARN:
+    Description: the Amazon Resource Name (ARN) of a CodeCommit repo.
     Type: String
-    Default: ""
+    AllowedPattern: "arn:aws:*:*:.*"
   GitBranchName:
     Description: Name of repository to use
     Type: String
     Default: "MASTER"
-  GitRepositoryExists:
-    Description: If checked will assume the repo has already been created
-    Type: String
-    Default: No
-    AllowedValues :
-      - Yes
-      - No
   SSLCertificate:
       Type: String
       Description: the Amazon Resource Name (ARN) of an AWS Certificate Manager (ACM) certificate. Otherwise will downgrade to HTTP.
       AllowedPattern: "(arn:aws:acm:.*|^$)"
 
 Conditions:
-  NeedsNewGitRepository: !Equals [!Ref GitRepositoryExists, "No"]
   UsesHTTPS: !Not [!Equals [!Ref SSLCertificate, ""]]
 
 Resources:
-
-# # # # Source # # # #
-
-  WebsiteRepository:
-    DeletionPolicy: Retain
-    Condition: NeedsNewGitRepository
-    Type: AWS::CodeCommit::Repository
-    Properties:
-      RepositoryDescription: !Ref Description
-      RepositoryName: !Ref GitRepositoryName
 
 # # # # Hosting # # # #
 
@@ -108,9 +90,12 @@ Resources:
           Compress: true
           TargetOriginId: s3-static-files
           ViewerProtocolPolicy: !If [ UsesHTTPS, redirect-to-https, http-only]
-          ViewerCertificate:
-            AcmCertificateArn: !If [ UsesHTTPS, !Ref SSLCertificate, '']
-            SslSupportMethod: sni-only
+          ForwardedValues:
+            QueryString: false
+        ViewerCertificate:
+          AcmCertificateArn: !If [ UsesHTTPS, !Ref SSLCertificate, !Ref "AWS::NoValue"]
+          CloudFrontDefaultCertificate: !If [ UsesHTTPS, !Ref "AWS::NoValue", true]
+          SslSupportMethod: sni-only
         DefaultRootObject: index.html
         Enabled: true
         Origins:
@@ -247,8 +232,6 @@ Resources:
       BucketName: !Join ['-', ['code-build', !Ref Application, !Ref Environment, 'artifacts']]
 
   WebsiteCodeBuild:
-    DependsOn:
-      - WebsiteRepository
     Type: "AWS::CodeBuild::Project"
     Properties:
       Tags:
@@ -298,7 +281,7 @@ Resources:
               - Sid: Allow pipeline to get source code
                 Effect: Allow
                 Resource:
-                  - !GetAtt WebsiteRepository.Arn
+                  - !Ref GitRepositoryARN
                 Action:
                   - codecommit:GitPull
               - Sid: Allow pipeline to store artifacts
@@ -323,7 +306,6 @@ Resources:
 
   DeployPipeline:
     DependsOn:
-      - WebsiteRepository
       - WebsiteCodeBuild
       - InvalidateWebsiteCloudFront
     Type: AWS::CodePipeline::Pipeline
@@ -347,7 +329,7 @@ Resources:
                 website-repository
               RunOrder: 1
               Configuration:
-                RepositoryName: !If [NeedsNewGitRepository, !Ref GitRepositoryName, !Ref GitRepositoryName]
+                RepositoryName: !Ref GitRepositoryARN
                 BranchName: !Ref GitBranchName
         # Runs CodeBuild to build the source with npm run build
         - Name: Build
@@ -397,24 +379,21 @@ Resources:
         PolicyDocument:
           Version: "2012-10-17"
           Statement:
-            - Sid: Access to S3
-              Action:
+            - Action:
               - s3:GetObject
               - s3:GetObjectVersion
               - s3:GetBucketVersioning
               Resource: "*" # TODO: restrict access to scope
               Effect: Allow
 
-            - Sid: Access to codepipeline
-              Action:
+            - Action:
               - s3:PutObject
               Resource:
               - arn:aws:s3:::codepipeline*
               - arn:aws:s3:::elasticbeanstalk*
               Effect: Allow
 
-            - Sid: Access to check for repository updates
-              Action:
+            - Action:
               - codecommit:CancelUploadArchive
               - codecommit:GetBranch
               - codecommit:GetCommit
@@ -423,8 +402,7 @@ Resources:
               Resource: "*" # TODO: restrict access to scope
               Effect: Allow
 
-            - Sid: General Code Deploy
-              Action:
+            - Action:
               - codedeploy:CreateDeployment
               - codedeploy:GetApplicationRevision
               - codedeploy:GetDeployment
@@ -433,8 +411,7 @@ Resources:
               Resource: "*" # TODO: restrict access to scope
               Effect: Allow
 
-            - Sid: Access needed by CodePipeline # TODO: restrict
-              Action:
+            - Action:
               - elasticbeanstalk:*
               - ec2:*
               - elasticloadbalancing:*
@@ -447,18 +424,16 @@ Resources:
               - sqs:*
               - ecs:*
               - iam:PassRole
-              Resource: "*"
+              Resource: "*" # TODO: restrict
               Effect: Allow
 
-            - Sid: Access needed by CodePipeline
-              Action:
+            - Action:
               - lambda:InvokeFunction
               - lambda:ListFunctions
               Resource: "*" # TODO: restrict
               Effect: Allow
 
-            - Sid: Give access to codebuild
-              Action:
+            - Action:
               - codebuild:BatchGetBuilds
               - codebuild:StartBuild
               Resource: "*" # TODO: restrict
@@ -469,9 +444,6 @@ Resources:
 # # # # Outputs # # # #
 
 Outputs:
-  GitRepositoryName:
-    Value: !If [NeedsNewGitRepository, !Ref GitRepositoryName, !Ref GitRepositoryName]
-    Description: Name of the git repository
   BucketName:
     Value: !Ref 'WebsiteBucket'
     Description: Name of S3 bucket to hold website content
