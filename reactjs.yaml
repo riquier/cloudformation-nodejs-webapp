@@ -12,7 +12,7 @@ Parameters:
     Type: String
   Environment:
     Description: Environment that will be tagged on all assets
-    Default: Development
+    Default: dev
     AllowedValues :
       - dev
       - qas
@@ -46,7 +46,7 @@ Parameters:
   SSLCertificate:
       Type: String
       Description: the Amazon Resource Name (ARN) of an AWS Certificate Manager (ACM) certificate. Otherwise will downgrade to HTTP.
-      AllowedPattern: "arn:aws:acm:.*"
+      AllowedPattern: "(arn:aws:acm:.*|^$)"
 
 Conditions:
   NeedsNewGitRepository: !Equals [!Ref GitRepositoryExists, "No"]
@@ -117,6 +117,7 @@ Resources:
           - DomainName: !Ref WebsiteBucket
             Id: s3-static-files
             S3OriginConfig:
+              OriginAccessIdentity: ''
 
   DomainRecords:
     DependsOn:
@@ -293,7 +294,7 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                 Resource:
-                  - !Join ['', ['arn:aws:logs:', !Ref AWS::Region, ':log-group:/aws/codebuild/*']]
+                  - !Join ['', ['arn:aws:logs:', !Ref "AWS::Region", ':log-group:/aws/codebuild/*']]
               - Sid: Allow pipeline to get source code
                 Effect: Allow
                 Resource:
