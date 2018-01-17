@@ -131,7 +131,8 @@ Resources:
       Handler: index.handler
       Role: !GetAtt InvalidateWebsiteCloudFrontExecutionRole.Arn
       Environment:
-        DISTRIBUTION_ID: !Ref WebsiteCloudfront
+        Variables:
+          DISTRIBUTION_ID: !Ref WebsiteCloudfront
       Runtime: nodejs6.10
       Code:
         ZipFile: !Sub |
