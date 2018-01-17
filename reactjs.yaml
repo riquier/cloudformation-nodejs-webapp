@@ -99,7 +99,7 @@ Resources:
         DefaultRootObject: index.html
         Enabled: true
         Origins:
-          - DomainName: !Ref WebsiteBucket
+          - DomainName: !GetAtt WebsiteBucket.DomainName
             Id: s3-static-files
             S3OriginConfig:
               OriginAccessIdentity: ''
