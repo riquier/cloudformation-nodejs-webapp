@@ -6,6 +6,7 @@ Parameters:
   Application:
     Description: Project Name
     Type: String
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
   Description:
     Description: Description
     Type: String
@@ -28,9 +29,13 @@ Parameters:
     AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
     ConstraintDescription: must be a valid DNS zone name.
   GitRepositoryName:
-    Description: Name of repository to create (not applied if pre existing repo is supplied)
+    Description: Name of repository to use
     Type: String
     Default: ""
+  GitBranchName:
+    Description: Name of repository to use
+    Type: String
+    Default: "MASTER"
   GitRepositoryExists:
     Description: If checked will assume the repo has already been created
     Type: String
@@ -48,13 +53,17 @@ Conditions:
 
 Resources:
 
-  GitRepository:
+# # # # Source # # # #
+
+  WebsiteRepository:
     DeletionPolicy: Retain
     Condition: NeedsNewGitRepository
     Type: AWS::CodeCommit::Repository
     Properties:
       RepositoryDescription: !Ref Description
       RepositoryName: !Ref GitRepositoryName
+
+# # # # Hosting # # # #
 
   WebsiteBucket:
     Type: AWS::S3::Bucket
@@ -115,6 +124,328 @@ Resources:
         HostedZoneName: !Join ['', [!Ref RootDomainName, .]]
         DNSName: !GetAtt [WebsiteCloudfront, DomainName]
 
+# # # # Deployment # # # #
+
+  InvalidateWebsiteCloudFront:
+    DependsOn:
+      - WebsiteCloudfront
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Invalidates a CloudFront distribution
+      Handler: index.handler
+      Role: !GetAtt InvalidateWebsiteCloudFrontExecutionRole.Arn
+      Environment:
+        DISTRIBUTION_ID: !Ref WebsiteCloudfront
+      Runtime: nodejs6.10
+      Code:
+        ZipFile: !Sub |
+          var AWS = require('aws-sdk');
+          var cloudfront = new AWS.CloudFront();
+          var ALL_OBJECTS = "/*"
+
+          exports.handler = (event, context) => {
+
+              var jobId = event["CodePipeline.job"].id;
+
+              var codepipeline = new AWS.CodePipeline();
+
+              // Notify AWS CodePipeline of a successful job
+              var invalidateSuccess = function(message) {
+                  var params = {
+                      jobId: jobId
+                  };
+                  codepipeline.putJobSuccessResult(params, function(err, data) {
+                      if(err) {
+                          context.fail(err);
+                      } else {
+                          context.succeed(message);
+                      }
+                  });
+              };
+
+              // Notify AWS CodePipeline of a failed job
+              var invalidateFail = function(message) {
+                  var params = {
+                      jobId: jobId,
+                      failureDetails: {
+                          message: JSON.stringify(message),
+                          type: 'JobFailed',
+                          externalExecutionId: context.invokeid
+                      }
+                  };
+                  codepipeline.putJobFailureResult(params, function(err, data) {
+                      context.fail(message);
+                  });
+              };
+
+              var params = {
+                DistributionId: process.env.DISTRIBUTION_ID,
+                InvalidationBatch: {
+                  CallerReference: jobId,
+                  Paths: {
+                    Quantity: 1,
+                    Items: [
+                      ALL_OBJECTS,
+                    ]
+                  }
+                }
+              };
+
+              cloudfront.createInvalidation(params, function(err, data) {
+                  if(err){
+                      invalidateFail(err)
+                  }else{
+                      invalidateSuccess(data)
+                  }
+              });
+
+          };
+
+  InvalidateWebsiteCloudFrontExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['-', ['lambda', !Ref Application, 'invalidation-role']]
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:*
+            Resource: arn:aws:logs:*:*:*
+
+  BuildArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join ['-', ['code-build', !Ref Application, 'artifacts']]
+
+  WebsiteCodeBuild:
+    DependsOn:
+      - WebsiteRepository
+    Type: "AWS::CodeBuild::Project"
+    Properties:
+      Artifacts:
+        Type: no_artifacts
+      Description: !Ref Description
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/nodejs:6.3.1
+        Type: LINUX_CONTAINER
+      Name: String
+      ServiceRole: !GetAtt WebsiteCodeBuildServiceRole.Arn
+      Source:
+        Source
+
+  WebsiteCodeBuildServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Join ['-', ['code-build', !Ref Application, 'service-role']]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+        Version: "2012-10-17"
+      Path: /
+      Policies:
+        - PolicyName: !Join ['-', ['code-build', !Ref Application, 'policy']]
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Allow pipeline to store logs
+                Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource:
+                  - !Join ['', ['arn:aws:logs:', !Ref AWS::Region, ':log-group:/aws/codebuild/*']]
+              - Sid: Allow pipeline to get source code
+                Effect: Allow
+                Resource:
+                  - !GetAtt WebsiteRepository.Arn
+                Action:
+                  - codecommit:GitPull
+              - Sid: Allow pipeline to store artifacts
+                Effect: Allow
+                Resource:
+                  - !Join ['',[!GetAtt BuildArtifactBucket.Arn, '/*']]
+                Action:
+                  - s3:PutObject
+              - Sid: Allow deployment to final bucket
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:GetObject
+                  - s3:GetObjectAcl
+                  - s3:DeleteObject
+                  - s3:PutObjectAcl
+                Resource:
+                 - !Join ['',[!GetAtt WebsiteBucket.Arn, '/*']]
+
+
+  DeployPipeline:
+    DependsOn:
+      - WebsiteRepository
+      - WebsiteCodeBuild
+      - InvalidateWebsiteCloudFront
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      ArtifactStore:
+        Location: BuildArtifactsBucket
+        Type: S3
+      Name: !Join ['-', [!Ref Application, 'pipeline']]
+      RoleArn: !GetAtt PipelineExecutionRole.Arn
+      Stages:
+        # Gets the source from CodeCommit
+        - Name: Source
+          Actions:
+            - Name: WebsiteSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: 1.0.0
+              OutputArtifacts:
+                website-repository
+              RunOrder: 1
+              Configuration:
+                RepositoryName: !If [NeedsNewGitRepository, !Ref GitRepositoryName, !Ref GitRepositoryName]
+                BranchName: !Ref GitBranchName
+        # Runs CodeBuild to build the source with npm run build
+        - Name: Build
+          Actions:
+            - Name: NodeBuild
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: 1.0.0
+              InputArtifacts:
+                website-repository
+              OutputArtifacts:
+                website-build
+              RunOrder: 2
+              Configuration:
+                ProjectName: !Ref WebsiteCodeBuild
+        # Invalidates CloudFront to let new files show
+        - Name: CleanUp
+          Actions:
+            - Name: InvalidateCloudfront
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: Lambda
+                Version: 1.0.0
+              RunOrder: 3
+              Configuration:
+                FunctionName: !Ref InvalidateWebsiteCloudFront
+
+  PipelineExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Join ['-', ['codepipeline', !Ref Application, 'service-role']]
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+      Path: /
+      Policies:
+      - PolicyName: !Join ['-', ['code-build', !Ref Application, 'policy']]
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: Access to S3
+              Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:GetBucketVersioning
+              Resource: "*" # TODO: restrict access to scope
+              Effect: Allow
+
+            - Sid: Access to codepipeline
+              Action:
+              - s3:PutObject
+              Resource:
+              - arn:aws:s3:::codepipeline*
+              - arn:aws:s3:::elasticbeanstalk*
+              Effect: Allow
+
+            - Sid: Access to check for repository updates
+              Action:
+              - codecommit:CancelUploadArchive
+              - codecommit:GetBranch
+              - codecommit:GetCommit
+              - codecommit:GetUploadArchiveStatus
+              - codecommit:UploadArchive
+              Resource: "*" # TODO: restrict access to scope
+              Effect: Allow
+
+            - Sid: General Code Deploy
+              Action:
+              - codedeploy:CreateDeployment
+              - codedeploy:GetApplicationRevision
+              - codedeploy:GetDeployment
+              - codedeploy:GetDeploymentConfig
+              - codedeploy:RegisterApplicationRevision
+              Resource: "*" # TODO: restrict access to scope
+              Effect: Allow
+
+            - Sid: Access needed by CodePipeline # TODO: restrict
+              Action:
+              - elasticbeanstalk:*
+              - ec2:*
+              - elasticloadbalancing:*
+              - autoscaling:*
+              - cloudwatch:*
+              - s3:*
+              - sns:*
+              - cloudformation:*
+              - rds:*
+              - sqs:*
+              - ecs:*
+              - iam:PassRole
+              Resource: "*"
+              Effect: Allow
+
+            - Sid: Access needed by CodePipeline
+              Action:
+              - lambda:InvokeFunction
+              - lambda:ListFunctions
+              Resource: "*" # TODO: restrict
+              Effect: Allow
+
+            - Sid: Give access to codebuild
+              Action:
+              - codebuild:BatchGetBuilds
+              - codebuild:StartBuild
+              Resource: "*" # TODO: restrict
+              Effect: Allow
+
+# # # # Monitoring # # # #
+
+# # # # Outputs # # # #
 
 Outputs:
   GitRepositoryName:
