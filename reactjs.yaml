@@ -14,9 +14,9 @@ Parameters:
     Description: Environment that will be tagged on all assets
     Default: Development
     AllowedValues :
-      - Development
-      - Quality Assurance
-      - Production
+      - dev
+      - qas
+      - prd
     Type: String
   RootDomainName:
     Description: The DNS name of an existing Amazon Route 53 hosted zone e.g. example.io
@@ -50,7 +50,7 @@ Parameters:
 
 Conditions:
   NeedsNewGitRepository: !Equals [!Ref GitRepositoryExists, "No"]
-  UsesHTTPS: !Not[ !Equals [!Ref SSLCertificate, ""] ]
+  UsesHTTPS: !Not [!Equals [!Ref SSLCertificate, ""]]
 
 Resources:
 
@@ -71,6 +71,11 @@ Resources:
     Properties:
       BucketName:
         Ref: RootDomainName
+      Tags:
+        - Key: Application
+          Value: NodeWebApp
+        - Key: Environment
+          Value: !Ref Environment
 
   WebsiteBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -112,7 +117,7 @@ Resources:
           - DomainName: !Ref WebsiteBucket
             Id: s3-static-files
             S3OriginConfig:
-            
+
   DomainRecords:
     DependsOn:
       - WebsiteCloudfront
@@ -131,6 +136,11 @@ Resources:
       - WebsiteCloudfront
     Type: AWS::Lambda::Function
     Properties:
+      Tags:
+        - Key: Application
+          Value: NodeWebApp
+        - Key: Environment
+          Value: !Ref Environment
       Description: Invalidates a CloudFront distribution
       Handler: index.handler
       Role: !GetAtt InvalidateWebsiteCloudFrontExecutionRole.Arn
@@ -204,7 +214,7 @@ Resources:
   InvalidateWebsiteCloudFrontExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['-', ['lambda', !Ref Application, 'invalidation-role']]
+      RoleName: !Join ['-', ['lambda', !Ref Application, !Ref Environment, 'invalidation-role']]
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -228,13 +238,23 @@ Resources:
   BuildArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Join ['-', ['code-build', !Ref Application, 'artifacts']]
+      Tags:
+        - Key: Application
+          Value: NodeWebApp
+        - Key: Environment
+          Value: !Ref Environment
+      BucketName: !Join ['-', ['code-build', !Ref Application, !Ref Environment, 'artifacts']]
 
   WebsiteCodeBuild:
     DependsOn:
       - WebsiteRepository
     Type: "AWS::CodeBuild::Project"
     Properties:
+      Tags:
+        - Key: Application
+          Value: NodeWebApp
+        - Key: Environment
+          Value: !Ref Environment
       Artifacts:
         Type: no_artifacts
       Description: !Ref Description
@@ -250,7 +270,7 @@ Resources:
   WebsiteCodeBuildServiceRole:
     Type: "AWS::IAM::Role"
     Properties:
-      RoleName: !Join ['-', ['code-build', !Ref Application, 'service-role']]
+      RoleName: !Join ['-', ['code-build', !Ref Application, !Ref Environment, 'service-role']]
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -262,7 +282,7 @@ Resources:
         Version: "2012-10-17"
       Path: /
       Policies:
-        - PolicyName: !Join ['-', ['code-build', !Ref Application, 'policy']]
+        - PolicyName: !Join ['-', ['code-build', !Ref Application, !Ref Environment, 'policy']]
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -310,7 +330,7 @@ Resources:
       ArtifactStore:
         Location: BuildArtifactsBucket
         Type: S3
-      Name: !Join ['-', [!Ref Application, 'pipeline']]
+      Name: !Join ['-', [!Ref Application,!Ref Environment, 'pipeline']]
       RoleArn: !GetAtt PipelineExecutionRole.Arn
       Stages:
         # Gets the source from CodeCommit
@@ -360,7 +380,7 @@ Resources:
   PipelineExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
-      RoleName: !Join ['-', ['codepipeline', !Ref Application, 'service-role']]
+      RoleName: !Join ['-', ['codepipeline', !Ref Application, !Ref Environment, 'service-role']]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -372,7 +392,7 @@ Resources:
                 - codepipeline.amazonaws.com
       Path: /
       Policies:
-      - PolicyName: !Join ['-', ['code-build', !Ref Application, 'policy']]
+      - PolicyName: !Join ['-', ['code-build', !Ref Application, !Ref Environment, 'policy']]
         PolicyDocument:
           Version: "2012-10-17"
           Statement:
