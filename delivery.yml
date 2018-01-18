@@ -8,11 +8,11 @@ Metadata:
       - Label:
           default: "Source"
         Parameters:
-          - GitRepositoryARN
+          - GitRepositoryName
           - GitBranchName
     ParameterLabels:
-      GitRepositoryARN:
-        default: "CodeCommit ARN"
+      GitRepositoryName:
+        default: "CodeCommit Name"
       GitBranchName:
         default: "Branch"
       HostingStack:
@@ -23,14 +23,13 @@ Parameters:
   Description:
     Description: Description to be recorded against some resources
     Type: String
-  GitRepositoryARN:
-    Description: the Amazon Resource Name (ARN) of a CodeCommit repo.
+  GitRepositoryName:
+    Description: The CodeCommit repo name.
     Type: String
-    AllowedPattern: "arn:aws:*:*:.*"
   GitBranchName:
     Description: Name of repository to use
     Type: String
-    Default: "MASTER"
+    Default: "master"
   HostingStack:
     Description: The hosting stack to deploy the source to
     Type: String
@@ -188,7 +187,7 @@ Resources:
                   - !Sub 'arn:aws:logs:${AWS::Region}:log-group:/aws/codebuild/*'
               - Effect: Allow
                 Resource:
-                  - !Ref GitRepositoryARN
+                  - !Sub 'arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${GitRepositoryName}'
                 Action:
                   - codecommit:GitPull
               - Effect: Allow
@@ -241,7 +240,7 @@ Resources:
                 - Name: website-repository
               RunOrder: 1
               Configuration:
-                RepositoryName: !Ref GitRepositoryARN
+                RepositoryName: !Ref GitRepositoryName
                 BranchName: !Ref GitBranchName
         # Runs CodeBuild to build the source with npm run build
         - Name: Build
