@@ -48,7 +48,7 @@ Resources:
           DISTRIBUTION_ID:
             Fn::ImportValue:
               Fn::Sub:
-                - '${HostingStack}-CloudfrontARN'
+                - ${HostingStack}-CloudfrontARN
                 - HostingStack: !Ref HostingStack
 
       Runtime: nodejs6.10
@@ -119,8 +119,6 @@ Resources:
   InvalidateWebsiteCloudFrontExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName:
-        !Sub 'lambda-${AWS::StackName}-invalidation-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -132,8 +130,7 @@ Resources:
             - sts:AssumeRole
       Path: "/"
       Policies:
-        - PolicyName: root
-          PolicyDocument:
+        - PolicyDocument:
             Version: '2012-10-17'
             Statement:
             - Effect: Allow
@@ -144,7 +141,10 @@ Resources:
   BuildArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'code-build-$(AWS::StackName)-artifacts'
+      BucketName:
+        Fn::Sub:
+          - code-build-$(Stack)-artifacts
+          - Stack: !Ref AWS::StackName
 
   WebsiteCodeBuild:
     Type: "AWS::CodeBuild::Project"
@@ -164,7 +164,6 @@ Resources:
   WebsiteCodeBuildServiceRole:
     Type: "AWS::IAM::Role"
     Properties:
-      RoleName: !Sub 'code-build-$(AWS::StackName)-service-role'
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -176,8 +175,7 @@ Resources:
         Version: "2012-10-17"
       Path: /
       Policies:
-        - PolicyName: !Sub 'code-build-$(AWS::StackName)-policy'
-          PolicyDocument:
+        - PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
@@ -210,11 +208,11 @@ Resources:
                   - s3:PutObjectAcl
                 Resource:
                   - Fn::Sub:
-                      - '$(Bucket)/*'
+                      - $(Bucket)/*
                       - Bucket:
                           Fn::ImportValue:
                             Fn::Sub:
-                              - '${HostingStack}-BucketName' # TODO: Fix
+                              - ${HostingStack}-BucketName
                               - HostingStack: !Ref HostingStack
 
   DeployPipeline:
@@ -226,7 +224,7 @@ Resources:
       ArtifactStore:
         Location: BuildArtifactsBucket
         Type: S3
-      Name: !Sub '$(AWS::StackName)-pipeline'
+      Name: !Sub "$(AWS::StackName)-pipeline"
       RoleArn: !GetAtt PipelineExecutionRole.Arn
       Stages:
         # Gets the source from CodeCommit
@@ -276,7 +274,6 @@ Resources:
   PipelineExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
-      RoleName: !Sub 'codepipeline-$(AWS::StackName)-service-role'
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -288,8 +285,7 @@ Resources:
                 - codepipeline.amazonaws.com
       Path: /
       Policies:
-        - PolicyName: !Sub 'code-build-$(AWS::StackName)-policy'
-          PolicyDocument:
+        - PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Action:
