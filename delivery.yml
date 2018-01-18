@@ -119,6 +119,8 @@ Resources:
   InvalidateWebsiteCloudFrontExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName:
+        !Sub 'lambda-${AWS::StackName}-invalidation-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -130,7 +132,8 @@ Resources:
             - sts:AssumeRole
       Path: "/"
       Policies:
-        - PolicyDocument:
+        - PolicyName: root
+          PolicyDocument:
             Version: '2012-10-17'
             Statement:
             - Effect: Allow
@@ -141,10 +144,7 @@ Resources:
   BuildArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName:
-        Fn::Sub:
-          - code-build-$(Stack)-artifacts
-          - Stack: !Ref AWS::StackName
+      BucketName: !Sub 'code-build-$(AWS::StackName)-artifacts'
 
   WebsiteCodeBuild:
     Type: "AWS::CodeBuild::Project"
@@ -164,6 +164,7 @@ Resources:
   WebsiteCodeBuildServiceRole:
     Type: "AWS::IAM::Role"
     Properties:
+      RoleName: !Sub 'code-build-$(AWS::StackName)-service-role'
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -175,7 +176,8 @@ Resources:
         Version: "2012-10-17"
       Path: /
       Policies:
-        - PolicyDocument:
+        - PolicyName: !Sub 'code-build-$(AWS::StackName)-policy'
+          PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
@@ -237,7 +239,7 @@ Resources:
                 Provider: CodeCommit
                 Version: 1.0.0
               OutputArtifacts:
-                website-repository
+                - Name: website-repository
               RunOrder: 1
               Configuration:
                 RepositoryName: !Ref GitRepositoryARN
@@ -252,9 +254,9 @@ Resources:
                 Provider: CodeBuild
                 Version: 1.0.0
               InputArtifacts:
-                website-repository
+                - Name: website-repository
               OutputArtifacts:
-                website-build
+                - Name: website-build
               RunOrder: 2
               Configuration:
                 ProjectName: !Ref WebsiteCodeBuild
@@ -274,6 +276,7 @@ Resources:
   PipelineExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
+      RoleName: !Sub 'codepipeline-$(AWS::StackName)-service-role'
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -285,7 +288,8 @@ Resources:
                 - codepipeline.amazonaws.com
       Path: /
       Policies:
-        - PolicyDocument:
+        - PolicyName: !Sub 'code-build-$(AWS::StackName)-policy'
+          PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Action:

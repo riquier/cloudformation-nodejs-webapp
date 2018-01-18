@@ -1,0 +1,12 @@
+{
+  "name": "aws-template-node-webapp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test-hosting": "cfn-lint validate hosting.yml --parameters RootDomainName=example.io,FullDomainName=app.example.io,SSLCertificate=arn:aws:acm:us-east-1:111111111111:certificate/2163c4bf-d5aa-4d34-aa98-2d2f6185e9fc",
+    "test-delivery": "cfn-lint validate delivery.yml --parameters GitRepositoryARN=arn:aws:codecommit:ap-southeast-2:111111111111:repo,HostingStack=hosting-stack-name --pseudo AWS::StackName=delivery-stack,AWS::Region=ap-northeast-1"
+  },
+  "dependencies": {
+    "cfn-lint": "^1.4.0"
+  }
+}
