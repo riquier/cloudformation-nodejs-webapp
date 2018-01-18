@@ -1,6 +1,6 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: React.js based serverless web app architecture
+Description: Continous Delivery of a Node App to a Serverless Hosting Stack
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -119,8 +119,7 @@ Resources:
   InvalidateWebsiteCloudFrontExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName:
-        !Sub 'lambda-${AWS::StackName}-invalidation-role'
+      RoleName: !Sub 'lambda-${AWS::StackName}-invalidation-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -144,7 +143,7 @@ Resources:
   BuildArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'code-build-$(AWS::StackName)-artifacts'
+      BucketName: !Sub 'code-build-${AWS::StackName}-artifacts'
 
   WebsiteCodeBuild:
     Type: "AWS::CodeBuild::Project"
@@ -164,7 +163,7 @@ Resources:
   WebsiteCodeBuildServiceRole:
     Type: "AWS::IAM::Role"
     Properties:
-      RoleName: !Sub 'code-build-$(AWS::StackName)-service-role'
+      RoleName: !Sub 'code-build-${AWS::StackName}-service-role'
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -176,7 +175,7 @@ Resources:
         Version: "2012-10-17"
       Path: /
       Policies:
-        - PolicyName: !Sub 'code-build-$(AWS::StackName)-policy'
+        - PolicyName: !Sub 'code-build-${AWS::StackName}-policy'
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -186,7 +185,7 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                 Resource:
-                  - !Sub 'arn:aws:logs:$(AWS::Region):log-group:/aws/codebuild/*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:log-group:/aws/codebuild/*'
               - Effect: Allow
                 Resource:
                   - !Ref GitRepositoryARN
@@ -195,8 +194,8 @@ Resources:
               - Effect: Allow
                 Resource:
                   - Fn::Sub:
-                      - '$(Bucket)/*'
-                      - Bucket: !Ref BuildArtifactBucket
+                      - '${Bucket}/*'
+                      - Bucket: !GetAtt BuildArtifactBucket.Arn
                 Action:
                   - s3:PutObject
               - Effect: Allow
@@ -210,11 +209,11 @@ Resources:
                   - s3:PutObjectAcl
                 Resource:
                   - Fn::Sub:
-                      - $(Bucket)/*
+                      - ${Bucket}/*
                       - Bucket:
                           Fn::ImportValue:
                             Fn::Sub:
-                              - ${HostingStack}-BucketName
+                              - ${HostingStack}-BucketARN
                               - HostingStack: !Ref HostingStack
 
   DeployPipeline:
@@ -224,9 +223,9 @@ Resources:
     Type: AWS::CodePipeline::Pipeline
     Properties:
       ArtifactStore:
-        Location: BuildArtifactsBucket
+        Location: !Ref BuildArtifactBucket
         Type: S3
-      Name: !Sub "$(AWS::StackName)-pipeline"
+      Name: !Sub "${AWS::StackName}-pipeline"
       RoleArn: !GetAtt PipelineExecutionRole.Arn
       Stages:
         # Gets the source from CodeCommit
@@ -237,7 +236,7 @@ Resources:
                 Category: Source
                 Owner: AWS
                 Provider: CodeCommit
-                Version: 1.0.0
+                Version: 1
               OutputArtifacts:
                 - Name: website-repository
               RunOrder: 1
@@ -252,7 +251,7 @@ Resources:
                 Category: Build
                 Owner: AWS
                 Provider: CodeBuild
-                Version: 1.0.0
+                Version: 1
               InputArtifacts:
                 - Name: website-repository
               OutputArtifacts:
@@ -268,7 +267,7 @@ Resources:
                 Category: Invoke
                 Owner: AWS
                 Provider: Lambda
-                Version: 1.0.0
+                Version: 1
               RunOrder: 3
               Configuration:
                 FunctionName: !Ref InvalidateWebsiteCloudFront
@@ -276,7 +275,7 @@ Resources:
   PipelineExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
-      RoleName: !Sub 'codepipeline-$(AWS::StackName)-service-role'
+      RoleName: !Sub 'codepipeline-${AWS::StackName}-service-role'
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -288,7 +287,7 @@ Resources:
                 - codepipeline.amazonaws.com
       Path: /
       Policies:
-        - PolicyName: !Sub 'code-build-$(AWS::StackName)-policy'
+        - PolicyName: !Sub 'code-build-${AWS::StackName}-policy'
           PolicyDocument:
             Version: "2012-10-17"
             Statement:

@@ -1,6 +1,6 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: React.js based serverless web app architecture
+Description: Serverless Hosting Infrustructure of Website
 
 Parameters:
   Description:
@@ -100,6 +100,11 @@ Outputs:
     Value: !Ref 'WebsiteBucket'
     Export:
       Name: !Sub "${AWS::StackName}-BucketName"
+  BucketARN:
+    Description: ARN of S3 bucket to hold website content
+    Value: !GetAtt WebsiteBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketARN"
   CloudfrontARN:
     Description: ARN for Cloudfront distribution
     Value: !Ref WebsiteCloudfront
