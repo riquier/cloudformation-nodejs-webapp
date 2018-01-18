@@ -85,7 +85,7 @@ Resources:
     Properties:
       HostedZoneName:
         Fn::Sub:
-          - '$(Domain).'
+          - ${Domain}.
           - Domain: !Ref RootDomainName
       RecordSets:
         - Name: !Ref FullDomainName
@@ -96,14 +96,22 @@ Resources:
 
 Outputs:
   BucketName:
-    Value: !Ref 'WebsiteBucket'
     Description: Name of S3 bucket to hold website content
+    Value: !Ref 'WebsiteBucket'
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
   CloudfrontARN:
-      Value: !Ref WebsiteCloudfront
-      Description: ARN for Cloudfront distribution
+    Description: ARN for Cloudfront distribution
+    Value: !Ref WebsiteCloudfront
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudfrontARN"
   CloudfrontEndpoint:
-    Value: !GetAtt [WebsiteCloudfront, DomainName]
     Description: Endpoint for Cloudfront distribution
+    Value: !GetAtt [WebsiteCloudfront, DomainName]
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudfrontEndpoint"
   FullDomain:
-    Value: !Ref 'FullDomainName'
     Description: Full DomainName
+    Value: !Ref 'FullDomainName'
+    Export:
+      Name: !Sub "${AWS::StackName}-FullDomain"
