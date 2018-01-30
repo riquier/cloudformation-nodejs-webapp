@@ -10,6 +10,11 @@ Metadata:
         Parameters:
           - GitRepositoryName
           - GitBranchName
+      - Label:
+          default: "External"
+        Parameters:
+          - HostingStack
+          - APIStack
     ParameterLabels:
       GitRepositoryName:
         default: "CodeCommit Name"
@@ -17,24 +22,55 @@ Metadata:
         default: "Branch"
       HostingStack:
         default: "Deploy to"
-
+      APIStack:
+        default: "Data Source"
 
 Parameters:
   Description:
     Description: Description to be recorded against some resources
     Type: String
   GitRepositoryName:
-    Description: The CodeCommit repo name.
+    Description: The CodeCommit repository name.
     Type: String
   GitBranchName:
-    Description: Name of repository to use
+    Description: The name of the git branch to use
     Type: String
     Default: "master"
   HostingStack:
     Description: The hosting stack to deploy the source to
     Type: String
+  APIStack:
+    Description: The API stack to get data from
+    Type: String
 
 Resources:
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Ref AWS::StackName
+      GenerateSecret: False
+      UserPoolId:
+        Fn::ImportValue:
+          Fn::Sub:
+            - ${APIStack}-UserPoolLogicalID
+            - APIStack: !Ref APIStack
+
+  IdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+#      IdentityPoolName: !Ref AWS::StackName
+      AllowUnauthenticatedIdentities: False
+#      DeveloperProviderName: TODO: link to domainname
+      CognitoIdentityProviders:
+        - ServerSideTokenCheck: False # TODO: check effect of this option
+          ClientId:
+            !Ref UserPoolClient
+          ProviderName:
+            Fn::ImportValue:
+              Fn::Sub:
+                - ${APIStack}-UserPoolLogicalProviderName
+                - APIStack: !Ref APIStack
 
   InvalidateWebsiteCloudFront:
     Type: AWS::Lambda::Function
@@ -175,6 +211,24 @@ Resources:
                 Fn::Sub:
                   - ${HostingStack}-BucketName
                   - HostingStack: !Ref HostingStack
+          - Name: REACT_APP_IDENTITY_POOL_ID
+            Value: !Ref IdentityPool
+          - Name: REACT_APP_REGION
+            Value: !Ref AWS::Region
+          - Name: REACT_APP_USER_POOL_ID
+            Value:
+              Fn::ImportValue:
+                Fn::Sub:
+                  - ${APIStack}-UserPoolLogicalID
+                  - APIStack: !Ref APIStack
+          - Name: REACT_APP_USER_POOL_WEB_CLIENT_ID
+            Value: !Ref UserPoolClient
+#          - Name: REACT_APP_MAIN_API
+#            Value:
+#              Fn::ImportValue:
+#                Fn::Sub:
+#                  - ${APIStack}-PrettyEndpoint
+#                  - APIStack: !Ref APIStack TODO: Create PrettyEndpoint output
       Name: !Ref "AWS::StackName"
       ServiceRole: !GetAtt WebsiteCodeBuildServiceRole.Arn
       Source:
