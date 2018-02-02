@@ -58,10 +58,15 @@ Resources:
 
   IdentityPool:
     Type: AWS::Cognito::IdentityPool
+    DependsOn:
+      - UserPoolClient
     Properties:
-#      IdentityPoolName: !Ref AWS::StackName
       AllowUnauthenticatedIdentities: False
-#      DeveloperProviderName: TODO: link to domainname
+      DeveloperProviderName:
+        Fn::ImportValue:
+          Fn::Sub:
+            - ${HostingStack}-FullDomain
+            - HostingStack: !Ref HostingStack
       CognitoIdentityProviders:
         - ServerSideTokenCheck: False # TODO: check effect of this option
           ClientId:
@@ -71,6 +76,84 @@ Resources:
               Fn::Sub:
                 - ${APIStack}-UserPoolLogicalProviderName
                 - APIStack: !Ref APIStack
+
+  CognitoUnAuthorizedRole:
+    Type: AWS::IAM::Role
+    DependsOn:
+      - IdentityPool
+    Properties:
+      RoleName: !Sub 'Cognito-${AWS::StackName}-noauth'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+            Action:
+              - sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "cognito-identity.amazonaws.com:aud": !Ref IdentityPool
+              "ForAnyValue:StringLike":
+                "cognito-identity.amazonaws.com:amr": unauthenticated
+      Policies:
+        - PolicyName: !Sub 'Cognito-${AWS::StackName}-noauth'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "mobileanalytics:PutEvents"
+                  - "cognito-sync:*"
+                Resource: "*"
+
+
+  CognitoAuthorizedRole:
+      Type: AWS::IAM::Role
+      DependsOn:
+        - IdentityPool
+      Properties:
+        RoleName: !Sub 'Cognito-${AWS::StackName}-auth'
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Principal:
+                Federated: "cognito-identity.amazonaws.com"
+              Action:
+                - "sts:AssumeRoleWithWebIdentity"
+              Condition:
+                StringEquals:
+                  "cognito-identity.amazonaws.com:aud": !Ref IdentityPool
+                "ForAnyValue:StringLike":
+                  "cognito-identity.amazonaws.com:amr": authenticated
+        Policies:
+          - PolicyName: !Sub 'Cognito-${AWS::StackName}-auth'
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "mobileanalytics:PutEvents"
+                    - "cognito-sync:*"
+                    - "cognito-identity:*"
+                  Resource: "*"
+                - Effect: "Allow"
+                  Action:
+                    - "lambda:InvokeFunction"
+                  Resource: "*" # TODO: restrict significantly
+
+  IdentityPoolRoleMapping:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    DependsOn:
+      - IdentityPool
+      - CognitoAuthorizedRole
+      - CognitoUnAuthorizedRole
+    Properties:
+      IdentityPoolId: !Ref IdentityPool
+      Roles:
+        authenticated: !GetAtt CognitoAuthorizedRole.Arn
+        unauthenticated: !GetAtt CognitoUnAuthorizedRole.Arn
 
   InvalidateWebsiteCloudFront:
     Type: AWS::Lambda::Function
@@ -424,3 +507,15 @@ Resources:
                 - codebuild:StartBuild
                 Resource: "*" # TODO: restrict
                 Effect: Allow
+
+Outputs:
+  CognitoIdentityPool:
+    Description: The ID of the cognito Identity Pool
+    Value: !Ref IdentityPool
+    Export:
+      Name: !Sub "${AWS::StackName}-IdentityPool"
+  CognitoUserPoolClient:
+    Description: The ID of the Cogntio UserPoolClient
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolClient"
